@@ -59,6 +59,7 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5001';
 const PYTHON_API_KEY  = process.env.PYTHON_API_KEY || '';
+const SERPAPI_KEY     = process.env.SERPAPI_KEY || '';
 
 async function requireAdmin(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -94,6 +95,31 @@ function entryKey(item1, item2) {
   const urls = [item1.url, item2.url].sort();
   return crypto.createHash('sha1').update(urls.join('|')).digest('hex');
 }
+
+app.get('/api/search', async (req, res) => {
+  const { q, platform } = req.query;
+  if (!q) return res.status(400).json({ error: 'Missing query parameter q' });
+  if (!SERPAPI_KEY) return res.status(500).json({ error: 'SERPAPI_KEY not configured on server' });
+
+  const platformNames = { shopee: 'Shopee', lazada: 'Lazada', tiktok: 'TikTok Shop' };
+  const searchQuery = platform && platform !== 'all'
+    ? `${q} ${platformNames[platform] || ''}`
+    : `${q} Shopee OR Lazada OR TikTok Shop`;
+
+  const serpUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(searchQuery)}&api_key=${SERPAPI_KEY}&num=40&gl=ph&hl=en`;
+
+  try {
+    const r = await fetch(serpUrl);
+    if (!r.ok) {
+      return res.status(502).json({ error: `SerpApi returned ${r.status}` });
+    }
+    const data = await r.json();
+    return res.json(data);
+  } catch (err) {
+    console.error('SerpApi error:', err.message);
+    return res.status(503).json({ error: 'Search service is unreachable' });
+  }
+});
 
 app.post('/api/auth/google', async (req, res) => {
   const { access_token } = req.body;
